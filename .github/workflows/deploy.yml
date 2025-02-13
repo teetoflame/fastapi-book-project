@@ -46,6 +46,12 @@ jobs:
             sudo docker rm teeto-fastapi || true
             sudo docker run -d -p 8000:8000 --name teeto-fastapi ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
           EOF
+          
+      - name: Restart Nginx
+        run: |
+          ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            sudo systemctl restart nginx
+          EOF
 
       - name: Check Deployment Health
         run: |
