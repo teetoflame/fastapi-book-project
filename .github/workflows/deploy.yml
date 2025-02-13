@@ -1,9 +1,9 @@
 name: Deployment Pipeline
 
-# Trigger the workflow on pushes to the main branch (e.g., after a PR merge)
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Check out the latest code from the repository (for reference; not used on EC2)
+      # Step 1: Check out the latest code from the repository
       - name: Checkout code
         uses: actions/checkout@v2
 
@@ -20,8 +20,8 @@ jobs:
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.EC2_HOST }}       # Your EC2 public IP or hostname
-          username: ${{ secrets.EC2_USER }}     # EC2 username (commonly "ubuntu")
-          key: ${{ secrets.EC2_SSH_KEY }}       # Your private SSH key (stored as a secret)
+          username: ${{ secrets.EC2_USER }}   # EC2 username (commonly "ubuntu")
+          key: ${{ secrets.EC2_SSH_KEY }}     # Your private SSH key (stored as a secret)
           port: 22
           script: |
             # Update package lists and install Docker and Git
@@ -31,18 +31,17 @@ jobs:
             sudo apt install -y docker.io git
 
             # Create the application directory if it does not exist
-            if [ ! -d "/home/ubuntu/fastapi-app" ]; then
-              echo "Creating directory /home/ubuntu/fastapi-app..."
+            if [ ! -d "/home/ubuntu/fastapi/fastapi-book-project" ]; then
+              echo "Creating directory /home/ubuntu/fastapi/fastapi-book-project..."
               mkdir -p /home/ubuntu/fastapi/fastapi-book-project
             fi
 
             # Change to the application directory
-            cd /home/ubuntu/fastapi-app || { echo "Directory /home/ubuntu/fastapi-app not found"; exit 1; }
+            cd /home/ubuntu/fastapi/fastapi-book-project || { echo "Directory not found"; exit 1; }
 
             # If the directory is not a Git repository, clone it; otherwise, pull the latest changes
             if [ ! -d ".git" ]; then
               echo "Directory is not a Git repository. Cloning repository..."
-              # Replace the URL below with your repository URL
               git clone https://github.com/teetoflame/fastapi-book-project.git .
             else
               echo "Git repository found. Pulling latest changes..."
@@ -58,6 +57,6 @@ jobs:
             sudo docker stop fastapi-container || true
             sudo docker rm fastapi-container || true
 
-            # Run the new container in detached mode, mapping port 8000
+            # Run the new container in detached mode, mapping port 80
             echo "Starting the new Docker container..."
             sudo docker run -d --name fastapi-container -p 80:80 fastapi-app
