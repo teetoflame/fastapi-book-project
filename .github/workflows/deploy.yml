@@ -1,4 +1,4 @@
-name: Deployment Pipeline
+name: Deploy
 
 on:
   push:
@@ -7,56 +7,60 @@ on:
 
 jobs:
   deploy:
-    name: Deploy
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Check out the latest code from the repository
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Step 2: Deploy to the AWS EC2 Ubuntu instance via SSH
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v0.1.6
+      - name: Build Docker image
+        run: |
+          docker build -t teeto-fastapi .
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKER_TOKEN }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+      - name: Tag Docker Image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          docker tag teeto-fastapi ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:$IMAGE_TAG
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      - name: Push Docker Image to Docker Hub
+        run: docker push ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.3
         with:
-          host: ${{ secrets.EC2_HOST }}       # Your EC2 public IP or hostname
-          username: ${{ secrets.EC2_USER }}   # EC2 username (commonly "ubuntu")
-          key: ${{ secrets.EC2_SSH_KEY }}     # Your private SSH key (stored as a secret)
-          port: 22
-          script: |
-            # Update package lists and install Docker and Git
-            echo "Updating packages..."
-            sudo apt update -y
-            echo "Installing Docker and Git..."
-            sudo apt install -y docker.io git
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
-            # Create the application directory if it does not exist
-            if [ ! -d "/home/ubuntu/fastapi/fastapi-book-project" ]; then
-              echo "Creating directory /home/ubuntu/fastapi/fastapi-book-project..."
-              mkdir -p /home/ubuntu/fastapi/fastapi-book-project
-            fi
+      - name: Deploy to EC2
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            sudo usermod -aG docker $USER || true  # Add user to Docker group if not already added
+            newgrp docker || true                  # Refresh group membership
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
+            sudo docker stop teeto-fastapi || true
+            sudo docker rm teeto-fastapi || true
+            sudo docker run -d -p 8000:8000 --name teeto-fastapi ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
+          EOF
 
-            # Change to the application directory
-            cd /home/ubuntu/fastapi/fastapi-book-project || { echo "Directory not found"; exit 1; }
+      - name: Check Deployment Health
+        run: |
+          for i in {1..10}; do
+            curl -f http://${{ secrets.DEPLOYMENT_URL }}/healthcheck && exit 0 || echo "Waiting for app..."
+            sleep 5
+          done
+          echo "App failed to start" && exit 1
 
-            # If the directory is not a Git repository, clone it; otherwise, pull the latest changes
-            if [ ! -d ".git" ]; then
-              echo "Directory is not a Git repository. Cloning repository..."
-              git clone https://github.com/teetoflame/fastapi-book-project.git .
-            else
-              echo "Git repository found. Pulling latest changes..."
-              git pull
-            fi
-
-            # Build the Docker image
-            echo "Building the Docker image..."
-            sudo docker build -t fastapi-app .
-
-            # Stop and remove the existing container if it exists
-            echo "Stopping and removing any existing container..."
-            sudo docker stop fastapi-container || true
-            sudo docker rm fastapi-container || true
-
-            # Run the new container in detached mode, mapping port 80
-            echo "Starting the new Docker container..."
-            sudo docker run -d --name fastapi-container -p 80:80 fastapi-app
+      - name: Debug Logs on Failure
+        if: failure()
+        env:
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            docker logs teeto-fastapi
+          EOF
