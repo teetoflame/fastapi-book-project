@@ -55,4 +55,4 @@ NOTE:
 🙅 DO NOT MODIFY main.py UNDER ANY CIRCUMSTANCES.
 
 🏁 Submission Deadline
-The deadline for submissions is 12th February 2025, 11:59 PM WAT (GMT +1). Late submissions will not be entertained.
+The deadline for submissions
