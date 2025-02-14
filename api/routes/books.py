@@ -55,6 +55,10 @@ async def get_book(book_id: int) -> Book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
 
+@router.get("/{book_id}/test", status_code=status.HTTP_200_OK)
+async def get_book(book_id: int):
+    return "What is going on JARE"
+
 
 @router.put("/{book_id}", response_model=Book, status_code=status.HTTP_200_OK)
 async def update_book(book_id: int, book: Book) -> Book:
