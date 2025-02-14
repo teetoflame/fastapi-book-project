@@ -65,12 +65,6 @@ jobs:
             sudo systemctl restart nginx
           EOF
 
-      # Step 8: Check Nginx error log
-      - name: Check Nginx error log
-        run: |
-          ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
-            sudo tail -n 100 /var/log/nginx/error.log  # Tail last 100 lines of Nginx error log
-          EOF
 
       # Step 9: Check Deployment Health (Make sure Nginx is serving FastAPI app)
       - name: Check Deployment Health
