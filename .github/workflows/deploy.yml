@@ -46,9 +46,10 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
           ssh -v -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
+            set -e  # Stop on errors
+
             # Add user to Docker group if not already added
-            sudo usermod -aG docker $USER || true
-            newgrp docker || true
+            sudo usermod -aG docker $(whoami) || true
 
             # Pull the latest Docker image
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
@@ -59,9 +60,12 @@ jobs:
 
             # Run the new Docker container
             sudo docker run -d -p 8000:8000 --name teeto-fastapi ${{ secrets.DOCKER_USERNAME }}/teeto-fastapi:${{ env.IMAGE_TAG }}
+
+            # Restart Nginx to pick up the new container
+            sudo systemctl restart nginx
           EOF
 
-      # Step 8: Restart Nginx to serve FastAPI through the reverse proxy
+      # Step 8: Check Nginx error log
       - name: Check Nginx error log
         run: |
           ssh -o StrictHostKeyChecking=no $EC2_USER@$EC2_HOST << 'EOF'
@@ -72,7 +76,13 @@ jobs:
       - name: Check Deployment Health
         run: |
           for i in {1..10}; do
-            curl -f http://${{ secrets.DEPLOYMENT_URL }}/healthcheck && exit 0 || echo "Waiting for app..."
+            HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" http://${{ secrets.DEPLOYMENT_URL }}/healthcheck)
+            if [ "$HTTP_STATUS" -eq 200 ]; then
+              echo "App is healthy"
+              exit 0
+            else
+              echo "Waiting for app... (status: $HTTP_STATUS)"
+            fi
             sleep 5
           done
           echo "App failed to start" && exit 1
